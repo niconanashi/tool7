@@ -28,32 +28,42 @@
         import { fetchFile, toBlobURL } from 'https://unpkg.com/@ffmpeg/util@0.12.1/dist/esm/index.js';
 
         const ffmpeg = new FFmpeg();
-        const dropZone = document.getElementById('drop-zone');
         const status = document.getElementById('status');
         const downloadBtn = document.getElementById('download-btn');
+        const dropZone = document.getElementById('drop-zone');
         let zipBlob = null;
 
         async function loadFFmpeg() {
+            // --- 診断コード ---
+            console.log("Cross-Origin Isolation Status:", self.crossOriginIsolated);
+            if (!self.crossOriginIsolated) {
+                status.innerText = "警告: セキュリティ設定（COOP/COEP）が有効ではありません。ページを再読み込みしてください。";
+            }
+            // ------------------
+
             try {
+                // ファイルが自分のサーバーに存在するか確認しつつ読み込む
                 const coreURL = await toBlobURL('./ffmpeg-core.js', 'text/javascript');
                 const workerURL = await toBlobURL('./worker.js', 'text/javascript');
-                
+                // .wasm だけは外部からでもOK
                 const wasmURL = await toBlobURL('https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.wasm', 'application/wasm');
 
+                console.log("Loading FFmpeg with local worker...");
                 await ffmpeg.load({
-                    coreURL,
-                    wasmURL,
-                    workerURL,
+                    coreURL: coreURL,
+                    wasmURL: wasmURL,
+                    workerURL: workerURL,
                 });
                 
                 status.innerText = "準備完了！ファイルをドロップしてください。";
             } catch (e) {
-                status.innerText = "ロード失敗。ファイルがリポジトリに正しく配置されているか確認してください。";
-                console.error("FFmpeg Load Error:", e);
+                status.innerText = "ロード失敗。コンソールを確認してください。";
+                console.error("FFmpeg Load Error Detailed:", e);
             }
         }
         loadFFmpeg();
 
+        // （以下のドラッグ＆ドロップ、変換処理は前のコードと同じでOKです）
         dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('dragover'); };
         dropZone.ondragleave = () => dropZone.classList.remove('dragover');
         dropZone.ondrop = async (e) => {
@@ -66,26 +76,30 @@
         async function processAudio(file) {
             downloadBtn.style.display = 'none';
             status.innerText = "変換中...";
-            
-            const fileName = file.name.split('.').slice(0, -1).join('.');
-            await ffmpeg.writeFile('input', await fetchFile(file));
+            try {
+                const fileName = file.name.split('.').slice(0, -1).join('.');
+                await ffmpeg.writeFile('input', await fetchFile(file));
 
-            status.innerText = "AACに変換中...";
-            await ffmpeg.exec(['-i', 'input', '-c:a', 'aac', 'out.aac']);
-            const aacData = await ffmpeg.readFile('out.aac');
+                status.innerText = "AACに変換中...";
+                await ffmpeg.exec(['-i', 'input', '-c:a', 'aac', 'out.aac']);
+                const aacData = await ffmpeg.readFile('out.aac');
 
-            status.innerText = "OGGに変換中...";
-            await ffmpeg.exec(['-i', 'input', '-c:a', 'libvorbis', 'out.ogg']);
-            const oggData = await ffmpeg.readFile('out.ogg');
+                status.innerText = "OGGに変換中...";
+                await ffmpeg.exec(['-i', 'input', '-c:a', 'libvorbis', 'out.ogg']);
+                const oggData = await ffmpeg.readFile('out.ogg');
 
-            status.innerText = "ZIP作成中...";
-            const zip = new JSZip();
-            zip.file(`${fileName}.aac`, aacData);
-            zip.file(`${fileName}.ogg`, oggData);
-            zipBlob = await zip.generateAsync({ type: "blob" });
-            
-            status.innerText = "完了！";
-            downloadBtn.style.display = 'block';
+                status.innerText = "ZIP作成中...";
+                const zip = new JSZip();
+                zip.file(`${fileName}.aac`, aacData);
+                zip.file(`${fileName}.ogg`, oggData);
+                zipBlob = await zip.generateAsync({ type: "blob" });
+                
+                status.innerText = "完了！";
+                downloadBtn.style.display = 'block';
+            } catch (err) {
+                console.error(err);
+                status.innerText = "変換中にエラーが発生しました。";
+            }
         }
 
         downloadBtn.onclick = () => {
