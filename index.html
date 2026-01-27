@@ -24,55 +24,58 @@
     <button id="download-btn">ZIPファイルをダウンロード</button>
 
     <script type="module">
-        import { FFmpeg } from 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.7/dist/esm/index.js';
+        // ユーティリティだけをインポート
         import { fetchFile, toBlobURL } from 'https://unpkg.com/@ffmpeg/util@0.12.1/dist/esm/index.js';
 
-        const ffmpeg = new FFmpeg({
-            log: true
-        });
         const status = document.getElementById('status');
         const downloadBtn = document.getElementById('download-btn');
         const dropZone = document.getElementById('drop-zone');
+        let ffmpeg = null; // 後で初期化
         let zipBlob = null;
 
         async function loadFFmpeg() {
-            // --- 診断コード ---
+            // 1. セキュリティ状況のチェック
             console.log("Cross-Origin Isolation Status:", self.crossOriginIsolated);
+            
             if (!self.crossOriginIsolated) {
-                status.innerText = "警告: セキュリティ設定（COOP/COEP）が有効ではありません。ページを再読み込みしてください。";
+                status.innerHTML = "<span style='color:red'>エラー: セキュリティ設定が適用されていません。<br>ページを数回リロード（Ctrl+F5）してください。</span>";
+                return;
             }
-            // ------------------
 
             try {
-                // ファイルが自分のサーバーに存在するか確認しつつ読み込む
+                // 2. FFmpeg本体のスクリプトをBlobとして読み込む
+                // これによりライブラリの「原産地」を自分のサイト（GitHub Pages）にする
+                const { FFmpeg } = await import('https://unpkg.com/@ffmpeg/ffmpeg@0.12.7/dist/esm/index.js');
+                ffmpeg = new FFmpeg();
+
+                // 3. 各種ファイルを自分のリポジトリから強制的に読み込む
                 const coreURL = await toBlobURL('./ffmpeg-core.js', 'text/javascript');
                 const workerURL = await toBlobURL('./worker.js', 'text/javascript');
-                // .wasm だけは外部からでもOK
                 const wasmURL = await toBlobURL('https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.wasm', 'application/wasm');
 
-                console.log("Loading FFmpeg with local worker...");
+                console.log("Loading FFmpeg...");
                 await ffmpeg.load({
-                    coreURL: coreURL,
-                    wasmURL: wasmURL,
-                    workerURL: workerURL,
+                    coreURL,
+                    workerURL,
+                    wasmURL
                 });
                 
                 status.innerText = "準備完了！ファイルをドロップしてください。";
             } catch (e) {
-                status.innerText = "ロード失敗。コンソールを確認してください。";
+                status.innerText = "ロード失敗。ファイルがリポジトリに存在するか確認してください。";
                 console.error("FFmpeg Load Error Detailed:", e);
             }
         }
         loadFFmpeg();
 
-        // （以下のドラッグ＆ドロップ、変換処理は前のコードと同じでOKです）
+        // （ドラッグ＆ドロップ、変換処理は以前のままでOKですが、ffmpegの初期化チェックだけ追加）
         dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('dragover'); };
         dropZone.ondragleave = () => dropZone.classList.remove('dragover');
         dropZone.ondrop = async (e) => {
             e.preventDefault();
             dropZone.classList.remove('dragover');
             const file = e.dataTransfer.files[0];
-            if (file) processAudio(file);
+            if (file && ffmpeg) processAudio(file);
         };
 
         async function processAudio(file) {
@@ -100,11 +103,12 @@
                 downloadBtn.style.display = 'block';
             } catch (err) {
                 console.error(err);
-                status.innerText = "変換中にエラーが発生しました。";
+                status.innerText = "変換中にエラーが発生しました。コンソールを確認してください。";
             }
         }
 
         downloadBtn.onclick = () => {
+            if (!zipBlob) return;
             const url = URL.createObjectURL(zipBlob);
             const a = document.createElement('a');
             a.href = url;
