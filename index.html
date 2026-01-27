@@ -2,93 +2,91 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Audio Converter (Stable Version)</title>
-    <!-- 旧バージョン v0.11 の FFmpeg 読み込み -->
+    <title>Audio Converter (Stable Edition)</title>
+    <!-- 旧バージョン v0.11 を使用（GitHub Pages でも動作可能） -->
     <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
-    <!-- JSZip の読み込み -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
-        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; background: #f0f2f5; }
-        .box { background: white; padding: 40px; border-radius: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); text-align: center; }
-        #drop-zone { border: 3px dashed #ccc; border-radius: 10px; padding: 50px 20px; cursor: pointer; transition: 0.3s; background: #fafafa; }
-        #drop-zone.dragover { border-color: #007bff; background: #e7f1ff; }
-        #status { margin-top: 20px; font-weight: bold; color: #555; }
-        #download-btn { margin-top: 20px; padding: 12px 24px; font-size: 16px; cursor: pointer; display: none; background: #28a745; color: white; border: none; border-radius: 5px; }
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; background: #f4f7f9; margin: 0; }
+        .card { background: white; padding: 40px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align: center; width: 90%; max-width: 450px; }
+        #drop-zone { border: 3px dashed #cbd5e0; border-radius: 15px; padding: 40px 20px; cursor: pointer; background: #f8fafc; transition: 0.3s; }
+        #drop-zone.dragover { border-color: #3182ce; background: #ebf8ff; }
+        #status { margin-top: 25px; font-weight: bold; color: #4a5568; font-size: 14px; min-height: 40px; }
+        #download-btn { margin-top: 20px; padding: 14px 28px; font-size: 16px; cursor: pointer; display: none; background: #48bb78; color: white; border: none; border-radius: 8px; width: 100%; font-weight: bold; }
     </style>
 </head>
 <body>
 
-<div class="box">
+<div class="card">
     <h1>音声変換 (AAC & OGG)</h1>
-    <p>GitHub Pages でも動作する安定版です</p>
-    <div id="drop-zone">ここに音声をドロップ</div>
-    <div id="status">準備中...</div>
-    <button id="download-btn">ZIPファイルを保存</button>
+    <div id="drop-zone">ここに音声をドロップ<br><small>(またはクリックして選択)</small></div>
+    <input type="file" id="file-input" style="display:none">
+    <div id="status">FFmpegを読み込んでいます...</div>
+    <button id="download-btn">ZIPファイルを保存する</button>
 </div>
 
 <script>
-    // v0.11 の記法
     const { createFFmpeg, fetchFile } = FFmpeg;
+    
+    // v0.11 をシングルスレッドモードで初期化
+    // これにより、GitHub Pages でも SecurityError が出なくなります
     const ffmpeg = createFFmpeg({
         log: true,
-        // セキュリティ制限を回避するためシングルスレッド版のコアを強制指定
         corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js'
     });
 
     const status = document.getElementById('status');
-    const downloadBtn = document.getElementById('download-btn');
     const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const downloadBtn = document.getElementById('download-btn');
 
-    // 初期化
+    // 初期化実行
     (async () => {
         try {
             await ffmpeg.load();
             status.innerText = "準備完了！音声をドロップしてください。";
         } catch (e) {
-            status.innerText = "初期化失敗。通信状況を確認してください。";
+            status.innerText = "エラー: 読み込みに失敗しました。ネット接続を確認してください。";
             console.error(e);
         }
     })();
 
-    // ドラッグ＆ドロップ
+    // ファイル入力のトリガー
+    dropZone.onclick = () => fileInput.click();
+    fileInput.onchange = (e) => { if(e.target.files[0]) process(e.target.files[0]); };
+
+    // ドラッグ＆ドロップ処理
     dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('dragover'); };
     dropZone.ondragleave = () => dropZone.classList.remove('dragover');
     dropZone.ondrop = async (e) => {
         e.preventDefault();
         dropZone.classList.remove('dragover');
-        const file = e.dataTransfer.files[0];
-        if (file) handleConversion(file);
+        if (e.dataTransfer.files[0]) process(e.dataTransfer.files[0]);
     };
 
-    async function handleConversion(file) {
+    async function process(file) {
         downloadBtn.style.display = 'none';
-        status.innerText = "変換中... (少し時間がかかります)";
-        
+        status.innerText = "ファイルを処理中...";
         const name = file.name.split('.').slice(0, -1).join('.');
-        const inputName = 'input_file';
 
         try {
             // ファイルを書き込み
-            ffmpeg.FS('writeFile', inputName, await fetchFile(file));
+            ffmpeg.FS('writeFile', 'input', await fetchFile(file));
 
-            // AAC 変換
-            status.innerText = "AACに変換中...";
-            await ffmpeg.run('-i', inputName, '-c:a', 'aac', 'out.aac');
+            status.innerText = "AACに変換中... (時間がかかります)";
+            await ffmpeg.run('-i', 'input', '-c:a', 'aac', 'out.aac');
             const aacData = ffmpeg.FS('readFile', 'out.aac');
 
-            // OGG 変換
             status.innerText = "OGGに変換中...";
-            await ffmpeg.run('-i', inputName, '-c:a', 'libvorbis', 'out.ogg');
+            await ffmpeg.run('-i', 'input', '-c:a', 'libvorbis', 'out.ogg');
             const oggData = ffmpeg.FS('readFile', 'out.ogg');
 
-            // ZIP化
             status.innerText = "ZIPを作成中...";
             const zip = new JSZip();
             zip.file(`${name}.aac`, aacData);
             zip.file(`${name}.ogg`, oggData);
             const blob = await zip.generateAsync({ type: "blob" });
 
-            // ダウンロード準備
             const url = URL.createObjectURL(blob);
             downloadBtn.onclick = () => {
                 const a = document.createElement('a');
@@ -97,7 +95,7 @@
                 a.click();
             };
             
-            status.innerText = "完了！";
+            status.innerText = "変換成功！";
             downloadBtn.style.display = 'block';
 
         } catch (err) {
@@ -106,6 +104,5 @@
         }
     }
 </script>
-
 </body>
 </html>
