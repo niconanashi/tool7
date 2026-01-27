@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Audio Converter (GitHub Pages)</title>
+    <!-- 【重要】サービスワーカーの読み込み（必ず最初に書く） -->
+    <script src="coi-serviceworker.js"></script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding-top: 50px; background: #f4f7f6; }
+        #drop-zone { width: 80%; max-width: 500px; height: 150px; border: 3px dashed #aaa; border-radius: 15px; display: flex; align-items: center; justify-content: center; background: white; cursor: pointer; }
+        #drop-zone.dragover { border-color: #007bff; background: #eef; }
+        #status { margin-top: 20px; font-weight: bold; }
+        #download-btn { margin-top: 20px; padding: 12px 24px; font-size: 16px; cursor: pointer; display: none; background: #28a745; color: white; border: none; border-radius: 5px; }
+    </style>
+</head>
+<body>
+
+    <h1>音声変換 (AAC & OGG)</h1>
+    <p>ファイルをドロップすると変換を開始し、ZIPでまとめます。</p>
+    <div id="drop-zone">ここに音声をドロップ</div>
+    <div id="status">FFmpegを準備中...</div>
+    <button id="download-btn">ZIPファイルをダウンロード</button>
+
+    <script type="module">
+        import { FFmpeg } from 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.7/dist/esm/index.js';
+        import { fetchFile, toBlobURL } from 'https://unpkg.com/@ffmpeg/util@0.12.1/dist/esm/index.js';
+
+        const ffmpeg = new FFmpeg();
+        const dropZone = document.getElementById('drop-zone');
+        const status = document.getElementById('status');
+        const downloadBtn = document.getElementById('download-btn');
+        let zipBlob = null;
+
+        async function loadFFmpeg() {
+            try {
+                const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+                await ffmpeg.load({
+                    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+                    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+                });
+                status.innerText = "準備完了！ファイルをドロップしてください。";
+            } catch (e) {
+                status.innerText = "エラー: ページを再読み込みしてください。";
+                console.error(e);
+            }
+        }
+        loadFFmpeg();
+
+        dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('dragover'); };
+        dropZone.ondragleave = () => dropZone.classList.remove('dragover');
+        dropZone.ondrop = async (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file) processAudio(file);
+        };
+
+        async function processAudio(file) {
+            downloadBtn.style.display = 'none';
+            status.innerText = "変換中...";
+            
+            const fileName = file.name.split('.').slice(0, -1).join('.');
+            await ffmpeg.writeFile('input', await fetchFile(file));
+
+            status.innerText = "AACに変換中...";
+            await ffmpeg.exec(['-i', 'input', '-c:a', 'aac', 'out.aac']);
+            const aacData = await ffmpeg.readFile('out.aac');
+
+            status.innerText = "OGGに変換中...";
+            await ffmpeg.exec(['-i', 'input', '-c:a', 'libvorbis', 'out.ogg']);
+            const oggData = await ffmpeg.readFile('out.ogg');
+
+            status.innerText = "ZIP作成中...";
+            const zip = new JSZip();
+            zip.file(`${fileName}.aac`, aacData);
+            zip.file(`${fileName}.ogg`, oggData);
+            zipBlob = await zip.generateAsync({ type: "blob" });
+            
+            status.innerText = "完了！";
+            downloadBtn.style.display = 'block';
+        }
+
+        downloadBtn.onclick = () => {
+            const url = URL.createObjectURL(zipBlob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'converted_audio.zip';
+            a.click();
+        };
+    </script>
+</body>
+</html>
