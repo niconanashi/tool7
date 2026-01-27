@@ -37,13 +37,13 @@
             try {
                 await ffmpeg.load({
                     coreURL: './ffmpeg-core.js',
-                    wasmURL: './ffmpeg-core.wasm',
+                    wasmURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.wasm', 
                     workerURL: './worker.js',
                 });
                 
                 status.innerText = "準備完了！ファイルをドロップしてください。";
             } catch (e) {
-                status.innerText = "ロードに失敗しました。5つのファイルがリポジトリにあるか確認してください。";
+                status.innerText = "ロードに失敗しました。ファイル構成を確認してください。";
                 console.error("FFmpeg Load Error:", e);
             }
         }
