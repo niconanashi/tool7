@@ -1,32 +1,112 @@
-async function handleConversion(file) {
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Converter (Stable v2)</title>
+    <!-- FFmpeg v0.11 (GitHub Pages で安定動作するシングルスレッド版) -->
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
+    <!-- JSZip (ファイルをまとめる用) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background-color: #f4f7f9; color: #333; }
+        .card { background: white; padding: 2rem; border-radius: 1.5rem; box-shadow: 0 10px 25px rgba(0,0,0,0.05); width: 90%; max-width: 480px; text-align: center; }
+        h1 { margin-top: 0; font-size: 1.5rem; color: #2d3748; }
+        p { font-size: 0.9rem; color: #718096; margin-bottom: 1.5rem; }
+        #drop-zone { border: 3px dashed #e2e8f0; border-radius: 1rem; padding: 3rem 1rem; cursor: pointer; transition: all 0.3s; background: #f8fafc; }
+        #drop-zone:hover, #drop-zone.dragover { border-color: #4299e1; background: #ebf8ff; }
+        #status { margin-top: 1.5rem; font-size: 0.9rem; font-weight: bold; min-height: 3rem; display: flex; align-items: center; justify-content: center; line-height: 1.4; }
+        #download-btn { margin-top: 1rem; padding: 0.8rem 2rem; font-size: 1rem; cursor: pointer; display: none; background: #48bb78; color: white; border: none; border-radius: 0.6rem; width: 100%; font-weight: bold; transition: background 0.2s; }
+        #download-btn:hover { background: #38a169; }
+        small { display: block; margin-top: 0.5rem; color: #a0aec0; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h1>音声変換 (M4A & OGG)</h1>
+    <p>ドロップしたファイルを変換してZIPにまとめます</p>
+    
+    <div id="drop-zone">
+        ここに音声をドロップ<br>
+        <small>(またはクリックしてファイルを選択)</small>
+    </div>
+    
+    <!-- ファイル選択用の隠しインプット（動画も選べるように video/* も追加） -->
+    <input type="file" id="file-input" style="display:none" accept="audio/*,video/*">
+    
+    <div id="status">FFmpegを準備中...</div>
+    
+    <button id="download-btn">ZIPファイルを保存する</button>
+</div>
+
+<script>
+    const { createFFmpeg, fetchFile } = FFmpeg;
+    const status = document.getElementById('status');
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const downloadBtn = document.getElementById('download-btn');
+    
+    // FFmpegの初期化 (シングルスレッド版コアを指定)
+    const ffmpeg = createFFmpeg({
+        log: true,
+        corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js'
+    });
+
+    (async () => {
+        try {
+            await ffmpeg.load();
+            status.innerText = "準備完了！音声をドロップしてください。";
+        } catch (e) {
+            status.innerText = "エラー: FFmpegの読み込みに失敗しました。再読み込みしてください。";
+            console.error(e);
+        }
+    })();
+
+    // クリックでファイル選択
+    dropZone.onclick = () => fileInput.click();
+    fileInput.onchange = (e) => { if(e.target.files[0]) process(e.target.files[0]); };
+
+    // ドラッグ＆ドロップ処理
+    dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('dragover'); };
+    dropZone.ondragleave = () => dropZone.classList.remove('dragover');
+    dropZone.ondrop = async (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        if (e.dataTransfer.files[0]) process(e.dataTransfer.files[0]);
+    };
+
+    async function process(file) {
+        if (!ffmpeg.isLoaded()) return;
+
         downloadBtn.style.display = 'none';
-        status.innerText = "変換中... (少し時間がかかります)";
-        
+        status.innerText = "ファイルを読み込み中...";
         const name = file.name.split('.').slice(0, -1).join('.');
-        const inputName = 'input_file';
+        const inputName = 'input_tmp';
 
         try {
+            // ブラウザ上の仮想メモリにファイルを保存
             ffmpeg.FS('writeFile', inputName, await fetchFile(file));
 
-            // AAC変換 (.m4aコンテナに入れることで時間を正確にする)
-            status.innerText = "AAC (M4A) に変換中...";
-            // -b:a 128k (ビットレート固定) と -movflags +faststart (ヘッダーを先頭に) を追加
+            // 1. AAC変換 (時間を正確にするため .m4a コンテナを使用)
+            status.innerHTML = "AAC (M4A) に変換中...<br><small>※時間がかかる場合があります</small>";
+            // -movflags +faststart でメタデータを先頭に配置し、再生時間のズレを防止
             await ffmpeg.run('-i', inputName, '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', 'out.m4a');
             const aacData = ffmpeg.FS('readFile', 'out.m4a');
 
-            // OGG 変換
-            status.innerText = "OGGに変換中...";
+            // 2. OGG変換
+            status.innerHTML = "OGGに変換中...<br><small>※時間がかかる場合があります</small>";
             await ffmpeg.run('-i', inputName, '-c:a', 'libvorbis', '-q:a', '4', 'out.ogg');
             const oggData = ffmpeg.FS('readFile', 'out.ogg');
 
-            // ZIP化
-            status.innerText = "ZIPを作成中...";
+            // 3. ZIPにまとめる
+            status.innerText = "ZIPアーカイブを作成中...";
             const zip = new JSZip();
-            // 拡張子を .m4a と .ogg にして保存
             zip.file(`${name}.m4a`, aacData);
             zip.file(`${name}.ogg`, oggData);
             const blob = await zip.generateAsync({ type: "blob" });
 
+            // 4. ダウンロードボタンの設定
             const url = URL.createObjectURL(blob);
             downloadBtn.onclick = () => {
                 const a = document.createElement('a');
@@ -35,11 +115,20 @@ async function handleConversion(file) {
                 a.click();
             };
             
-            status.innerText = "完了！再生時間も修正されました。";
+            status.innerText = "変換成功！";
             downloadBtn.style.display = 'block';
+
+            // メモリ解放（不要な仮想ファイルを削除）
+            ffmpeg.FS('unlink', inputName);
+            ffmpeg.FS('unlink', 'out.m4a');
+            ffmpeg.FS('unlink', 'out.ogg');
 
         } catch (err) {
             console.error(err);
-            status.innerText = "エラーが発生しました。";
+            status.innerHTML = "<span style='color:red'>エラーが発生しました。ファイルサイズが大きすぎるか、形式が未対応の可能性があります。</span>";
         }
     }
+</script>
+
+</body>
+</html>
