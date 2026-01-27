@@ -35,15 +35,20 @@
 
         async function loadFFmpeg() {
             try {
+                const coreURL = await toBlobURL('./ffmpeg-core.js', 'text/javascript');
+                const workerURL = await toBlobURL('./worker.js', 'text/javascript');
+                
+                const wasmURL = await toBlobURL('https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.wasm', 'application/wasm');
+
                 await ffmpeg.load({
-                    coreURL: './ffmpeg-core.js',
-                    wasmURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.wasm', 
-                    workerURL: './worker.js',
+                    coreURL,
+                    wasmURL,
+                    workerURL,
                 });
                 
                 status.innerText = "準備完了！ファイルをドロップしてください。";
             } catch (e) {
-                status.innerText = "ロードに失敗しました。ファイル構成を確認してください。";
+                status.innerText = "ロード失敗。ファイルがリポジトリに正しく配置されているか確認してください。";
                 console.error("FFmpeg Load Error:", e);
             }
         }
