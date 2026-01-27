@@ -2,106 +2,110 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Audio Converter</title>
-    <!-- セキュリティ解除スクリプト -->
-    <script src="coi-serviceworker.js"></script>
+    <title>Audio Converter (Stable Version)</title>
+    <!-- 旧バージョン v0.11 の FFmpeg 読み込み -->
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
+    <!-- JSZip の読み込み -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
-        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding-top: 50px; background: #f0f4f8; }
-        .box { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); text-align: center; width: 80%; max-width: 500px; }
-        #drop-zone { border: 3px dashed #aaa; border-radius: 10px; padding: 40px 20px; cursor: pointer; }
-        #status { margin-top: 20px; font-weight: bold; }
-        #download-btn { margin-top: 20px; padding: 12px 24px; cursor: pointer; display: none; background: #28a745; color: white; border: none; border-radius: 5px; }
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; background: #f0f2f5; }
+        .box { background: white; padding: 40px; border-radius: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); text-align: center; }
+        #drop-zone { border: 3px dashed #ccc; border-radius: 10px; padding: 50px 20px; cursor: pointer; transition: 0.3s; background: #fafafa; }
+        #drop-zone.dragover { border-color: #007bff; background: #e7f1ff; }
+        #status { margin-top: 20px; font-weight: bold; color: #555; }
+        #download-btn { margin-top: 20px; padding: 12px 24px; font-size: 16px; cursor: pointer; display: none; background: #28a745; color: white; border: none; border-radius: 5px; }
     </style>
 </head>
 <body>
 
 <div class="box">
     <h1>音声変換 (AAC & OGG)</h1>
+    <p>GitHub Pages でも動作する安定版です</p>
     <div id="drop-zone">ここに音声をドロップ</div>
-    <div id="status">設定を確認中...</div>
+    <div id="status">準備中...</div>
     <button id="download-btn">ZIPファイルを保存</button>
 </div>
 
-<script type="module">
-    import { FFmpeg } from 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.7/dist/esm/index.js';
-    import { fetchFile, toBlobURL } from 'https://unpkg.com/@ffmpeg/util@0.12.1/dist/esm/index.js';
+<script>
+    // v0.11 の記法
+    const { createFFmpeg, fetchFile } = FFmpeg;
+    const ffmpeg = createFFmpeg({
+        log: true,
+        // セキュリティ制限を回避するためシングルスレッド版のコアを強制指定
+        corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js'
+    });
 
-    const ffmpeg = new FFmpeg();
     const status = document.getElementById('status');
     const downloadBtn = document.getElementById('download-btn');
+    const dropZone = document.getElementById('drop-zone');
 
-    async function init() {
-        // セキュリティチェック（coi-serviceworkerが動いているか）
-        if (!self.crossOriginIsolated) {
-            status.innerHTML = "初期化中... 自動でリロードされます。<br>されない場合は手動で更新してください。";
-            return;
-        }
-
+    // 初期化
+    (async () => {
         try {
-            status.innerText = "FFmpegをロード中...";
-
-            // 【重要】GitHub Pagesの絶対パスを計算
-            const loc = window.location.origin + window.location.pathname.replace('index.html', '');
-            
-            // 全てのパスを、外部(unpkg)ではなく自分のGitHub上のファイルに強制固定
-            const coreURL = await toBlobURL(`${loc}ffmpeg-core.js`, 'text/javascript');
-            const workerURL = await toBlobURL(`${loc}worker.js`, 'text/javascript');
-            // wasmはデータとして読み込むので外部でもOK
-            const wasmURL = await toBlobURL('https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.wasm', 'application/wasm');
-
-            await ffmpeg.load({
-                coreURL: coreURL,
-                workerURL: workerURL,
-                wasmURL: wasmURL
-            });
-
+            await ffmpeg.load();
             status.innerText = "準備完了！音声をドロップしてください。";
         } catch (e) {
-            console.error("FFmpeg Load Error:", e);
-            status.innerText = "ロード失敗。キャッシュを消去してください。";
+            status.innerText = "初期化失敗。通信状況を確認してください。";
+            console.error(e);
         }
-    }
+    })();
 
-    init();
-
-    // ドロップ＆変換処理
-    const dropZone = document.getElementById('drop-zone');
-    dropZone.ondragover = (e) => e.preventDefault();
+    // ドラッグ＆ドロップ
+    dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('dragover'); };
+    dropZone.ondragleave = () => dropZone.classList.remove('dragover');
     dropZone.ondrop = async (e) => {
         e.preventDefault();
+        dropZone.classList.remove('dragover');
         const file = e.dataTransfer.files[0];
-        if (file) {
-            status.innerText = "変換中...";
-            await convert(file);
-        }
+        if (file) handleConversion(file);
     };
 
-    async function convert(file) {
+    async function handleConversion(file) {
+        downloadBtn.style.display = 'none';
+        status.innerText = "変換中... (少し時間がかかります)";
+        
         const name = file.name.split('.').slice(0, -1).join('.');
-        await ffmpeg.writeFile('input', await fetchFile(file));
+        const inputName = 'input_file';
 
-        await ffmpeg.exec(['-i', 'input', '-c:a', 'aac', 'out.aac']);
-        const aac = await ffmpeg.readFile('out.aac');
+        try {
+            // ファイルを書き込み
+            ffmpeg.FS('writeFile', inputName, await fetchFile(file));
 
-        await ffmpeg.exec(['-i', 'input', '-c:a', 'libvorbis', 'out.ogg']);
-        const ogg = await ffmpeg.readFile('out.ogg');
+            // AAC 変換
+            status.innerText = "AACに変換中...";
+            await ffmpeg.run('-i', inputName, '-c:a', 'aac', 'out.aac');
+            const aacData = ffmpeg.FS('readFile', 'out.aac');
 
-        const zip = new JSZip();
-        zip.file(`${name}.aac`, aac);
-        zip.file(`${name}.ogg`, ogg);
-        const blob = await zip.generateAsync({ type: "blob" });
+            // OGG 変換
+            status.innerText = "OGGに変換中...";
+            await ffmpeg.run('-i', inputName, '-c:a', 'libvorbis', 'out.ogg');
+            const oggData = ffmpeg.FS('readFile', 'out.ogg');
 
-        const url = URL.createObjectURL(blob);
-        downloadBtn.onclick = () => {
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `${name}_converted.zip`;
-            a.click();
-        };
-        downloadBtn.style.display = 'block';
-        status.innerText = "完了！";
+            // ZIP化
+            status.innerText = "ZIPを作成中...";
+            const zip = new JSZip();
+            zip.file(`${name}.aac`, aacData);
+            zip.file(`${name}.ogg`, oggData);
+            const blob = await zip.generateAsync({ type: "blob" });
+
+            // ダウンロード準備
+            const url = URL.createObjectURL(blob);
+            downloadBtn.onclick = () => {
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${name}_converted.zip`;
+                a.click();
+            };
+            
+            status.innerText = "完了！";
+            downloadBtn.style.display = 'block';
+
+        } catch (err) {
+            console.error(err);
+            status.innerText = "エラーが発生しました。";
+        }
     }
 </script>
+
 </body>
 </html>
