@@ -36,14 +36,20 @@
         async function loadFFmpeg() {
             try {
                 const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+                const ffmpegURL = 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.7/dist/esm';
+
                 await ffmpeg.load({
+                    // コア部分の読み込み
                     coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
                     wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+                    // 【重要】ワーカースクリプトもBlob化して読み込むことでエラーを回避
+                    workerURL: await toBlobURL(`${ffmpegURL}/worker.js`, 'text/javascript'),
                 });
+                
                 status.innerText = "準備完了！ファイルをドロップしてください。";
             } catch (e) {
-                status.innerText = "エラー: ページを再読み込みしてください。";
-                console.error(e);
+                status.innerText = "エラーが発生しました。コンソールを確認してください。";
+                console.error("FFmpeg Load Error:", e);
             }
         }
         loadFFmpeg();
