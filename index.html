@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Audio Converter (Pages Fix)</title>
     <!-- 【最優先】セキュリティ規制を回避するスクリプト -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            // 現在のディレクトリ（./）に限定して登録
+            navigator.serviceWorker.register('./coi-serviceworker.js', { scope: './' })
+            .then(function(reg) {
+                console.log('ServiceWorker 登録成功:', reg.scope);
+            }).catch(function(err) {
+                console.log('ServiceWorker 登録失敗:', err);
+            });
+        }
+    </script>
     <script src="coi-serviceworker.js"></script>
     
     <!-- FFmpeg v0.11 -->
