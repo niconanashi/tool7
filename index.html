@@ -3,40 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Audio Converter (Stable v2)</title>
-    <!-- FFmpeg v0.11 (GitHub Pages で安定動作するシングルスレッド版) -->
+    <title>Audio Converter (Pages Fix)</title>
+    <!-- 【最優先】セキュリティ規制を回避するスクリプト -->
+    <script src="coi-serviceworker.js"></script>
+    
+    <!-- FFmpeg v0.11 -->
     <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
-    <!-- JSZip (ファイルをまとめる用) -->
+    <!-- JSZip -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background-color: #f4f7f9; color: #333; }
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background-color: #f4f7f9; }
         .card { background: white; padding: 2rem; border-radius: 1.5rem; box-shadow: 0 10px 25px rgba(0,0,0,0.05); width: 90%; max-width: 480px; text-align: center; }
-        h1 { margin-top: 0; font-size: 1.5rem; color: #2d3748; }
-        p { font-size: 0.9rem; color: #718096; margin-bottom: 1.5rem; }
-        #drop-zone { border: 3px dashed #e2e8f0; border-radius: 1rem; padding: 3rem 1rem; cursor: pointer; transition: all 0.3s; background: #f8fafc; }
-        #drop-zone:hover, #drop-zone.dragover { border-color: #4299e1; background: #ebf8ff; }
-        #status { margin-top: 1.5rem; font-size: 0.9rem; font-weight: bold; min-height: 3rem; display: flex; align-items: center; justify-content: center; line-height: 1.4; }
-        #download-btn { margin-top: 1rem; padding: 0.8rem 2rem; font-size: 1rem; cursor: pointer; display: none; background: #48bb78; color: white; border: none; border-radius: 0.6rem; width: 100%; font-weight: bold; transition: background 0.2s; }
-        #download-btn:hover { background: #38a169; }
-        small { display: block; margin-top: 0.5rem; color: #a0aec0; }
+        #drop-zone { border: 3px dashed #e2e8f0; border-radius: 1rem; padding: 3rem 1rem; cursor: pointer; background: #f8fafc; transition: 0.3s; }
+        #drop-zone.dragover { border-color: #4299e1; background: #ebf8ff; }
+        #status { margin-top: 1.5rem; font-weight: bold; min-height: 3rem; display: flex; align-items: center; justify-content: center; font-size: 0.9rem; }
+        #download-btn { margin-top: 1rem; padding: 0.8rem 2rem; font-size: 1rem; cursor: pointer; display: none; background: #48bb78; color: white; border: none; border-radius: 0.6rem; width: 100%; font-weight: bold; }
     </style>
 </head>
 <body>
 
 <div class="card">
     <h1>音声変換 (M4A & OGG)</h1>
-    <p>ドロップしたファイルを変換してZIPにまとめます</p>
-    
-    <div id="drop-zone">
-        ここに音声をドロップ<br>
-        <small>(またはクリックしてファイルを選択)</small>
-    </div>
-    
-    <!-- ファイル選択用の隠しインプット（動画も選べるように video/* も追加） -->
+    <div id="drop-zone">ここに音声をドロップ</div>
     <input type="file" id="file-input" style="display:none" accept="audio/*,video/*">
-    
-    <div id="status">FFmpegを準備中...</div>
-    
+    <div id="status">準備中...</div>
     <button id="download-btn">ZIPファイルを保存する</button>
 </div>
 
@@ -47,30 +37,30 @@
     const fileInput = document.getElementById('file-input');
     const downloadBtn = document.getElementById('download-btn');
     
-    // FFmpegの初期化 (シングルスレッド版コアを指定)
     const ffmpeg = createFFmpeg({
         log: true,
         corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js'
     });
 
-    (async () => {
+    async function init() {
+        if (!self.crossOriginIsolated) {
+            status.innerHTML = "セキュリティ設定を適用中...<br>リロードをお待ちください。";
+            return;
+        }
         try {
             await ffmpeg.load();
             status.innerText = "準備完了！音声をドロップしてください。";
         } catch (e) {
-            status.innerText = "エラー: FFmpegの読み込みに失敗しました。再読み込みしてください。";
-            console.error(e);
+            status.innerText = "ロード失敗。再読み込みしてください。";
         }
-    })();
+    }
+    init();
 
-    // クリックでファイル選択
     dropZone.onclick = () => fileInput.click();
     fileInput.onchange = (e) => { if(e.target.files[0]) process(e.target.files[0]); };
-
-    // ドラッグ＆ドロップ処理
     dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('dragover'); };
     dropZone.ondragleave = () => dropZone.classList.remove('dragover');
-    dropZone.ondrop = async (e) => {
+    dropZone.ondrop = (e) => {
         e.preventDefault();
         dropZone.classList.remove('dragover');
         if (e.dataTransfer.files[0]) process(e.dataTransfer.files[0]);
@@ -78,57 +68,37 @@
 
     async function process(file) {
         if (!ffmpeg.isLoaded()) return;
-
         downloadBtn.style.display = 'none';
-        status.innerText = "ファイルを読み込み中...";
+        status.innerText = "変換中...";
         const name = file.name.split('.').slice(0, -1).join('.');
-        const inputName = 'input_tmp';
 
         try {
-            // ブラウザ上の仮想メモリにファイルを保存
-            ffmpeg.FS('writeFile', inputName, await fetchFile(file));
+            ffmpeg.FS('writeFile', 'input', await fetchFile(file));
 
-            // 1. AAC変換 (時間を正確にするため .m4a コンテナを使用)
-            status.innerHTML = "AAC (M4A) に変換中...<br><small>※時間がかかる場合があります</small>";
-            // -movflags +faststart でメタデータを先頭に配置し、再生時間のズレを防止
-            await ffmpeg.run('-i', inputName, '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', 'out.m4a');
+            status.innerText = "AAC(M4A)に変換中...";
+            await ffmpeg.run('-i', 'input', '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', 'out.m4a');
             const aacData = ffmpeg.FS('readFile', 'out.m4a');
 
-            // 2. OGG変換
-            status.innerHTML = "OGGに変換中...<br><small>※時間がかかる場合があります</small>";
-            await ffmpeg.run('-i', inputName, '-c:a', 'libvorbis', '-q:a', '4', 'out.ogg');
+            status.innerText = "OGGに変換中...";
+            await ffmpeg.run('-i', 'input', '-c:a', 'libvorbis', '-q:a', '4', 'out.ogg');
             const oggData = ffmpeg.FS('readFile', 'out.ogg');
 
-            // 3. ZIPにまとめる
-            status.innerText = "ZIPアーカイブを作成中...";
             const zip = new JSZip();
             zip.file(`${name}.m4a`, aacData);
             zip.file(`${name}.ogg`, oggData);
             const blob = await zip.generateAsync({ type: "blob" });
 
-            // 4. ダウンロードボタンの設定
             const url = URL.createObjectURL(blob);
             downloadBtn.onclick = () => {
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `${name}_converted.zip`;
-                a.click();
+                const a = document.createElement('a'); a.href = url;
+                a.download = `${name}_converted.zip`; a.click();
             };
-            
-            status.innerText = "変換成功！";
+            status.innerText = "成功！";
             downloadBtn.style.display = 'block';
-
-            // メモリ解放（不要な仮想ファイルを削除）
-            ffmpeg.FS('unlink', inputName);
-            ffmpeg.FS('unlink', 'out.m4a');
-            ffmpeg.FS('unlink', 'out.ogg');
-
         } catch (err) {
-            console.error(err);
-            status.innerHTML = "<span style='color:red'>エラーが発生しました。ファイルサイズが大きすぎるか、形式が未対応の可能性があります。</span>";
+            status.innerText = "エラーが発生しました。";
         }
     }
 </script>
-
 </body>
 </html>
