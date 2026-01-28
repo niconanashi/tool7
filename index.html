@@ -32,7 +32,8 @@
         <small>(またはクリックしてファイルを選択)</small>
     </div>
     
-    <input type="file" id="file-input" style="display:none" accept="audio/*">
+    <!-- ファイル選択用の隠しインプット（動画も選べるように video/* も追加） -->
+    <input type="file" id="file-input" style="display:none" accept="audio/*,video/*">
     
     <div id="status">FFmpegを準備中...</div>
     
@@ -77,15 +78,6 @@
 
     async function process(file) {
         if (!ffmpeg.isLoaded()) return;
-        if (!file.type.startsWith('audio/')) {
-            status.innerHTML = "<span style='color:red'>エラー: 音声ファイル以外は処理できません。</span>";
-            return;
-        }
-        const maxSize = 100 * 1024 * 1024; // 100MB
-        if (file.size > maxSize) {
-            status.innerHTML = "<span style='color:red'>エラー: ファイルが大きすぎます(100MBまで)。</span>";
-            return;
-        }
 
         downloadBtn.style.display = 'none';
         status.innerText = "ファイルを読み込み中...";
